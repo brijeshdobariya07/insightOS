@@ -1,27 +1,32 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
-import { Sidebar } from "./Sidebar";
-import { Header } from "./Header";
-import { CopilotPanelPlaceholder } from "./CopilotPanelPlaceholder";
+import {CopilotPanel} from "@/features/ai-copilot/components/CopilotPanel";
+import {type ReactNode, useCallback, useState} from "react";
+import {Header} from "./Header";
+import {Sidebar} from "./Sidebar";
 
-interface DashboardLayoutProps {
+interface DashboardLayoutProps
+{
   readonly children: ReactNode;
 }
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({children}: DashboardLayoutProps)
+{
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
 
-  const handleToggleSidebar = useCallback(() => {
+  const handleToggleSidebar = useCallback(() =>
+  {
     setIsSidebarCollapsed((prev) => !prev);
   }, []);
 
-  const handleToggleCopilot = useCallback(() => {
+  const handleToggleCopilot = useCallback(() =>
+  {
     setIsCopilotOpen((prev) => !prev);
   }, []);
 
-  const handleCloseCopilot = useCallback(() => {
+  const handleCloseCopilot = useCallback(() =>
+  {
     setIsCopilotOpen(false);
   }, []);
 
@@ -50,7 +55,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* AI Copilot panel */}
-      <CopilotPanelPlaceholder
+      <CopilotPanel
         isOpen={isCopilotOpen}
         onClose={handleCloseCopilot}
       />
