@@ -1,10 +1,7 @@
-import { NextResponse } from "next/server";
+import {type CopilotResponse, CopilotResponseSchema} from "@/lib/validators/copilot-schema";
+import {NextResponse} from "next/server";
 import OpenAI from "openai";
-import { z } from "zod";
-import {
-  CopilotResponseSchema,
-  type CopilotResponse,
-} from "@/lib/validators/copilot-schema";
+import {z} from "zod";
 
 // ---------------------------------------------------------------------------
 // System prompt — exact role definition from ai-behavior-contract.md Section 2
@@ -47,7 +44,7 @@ const FALLBACK_RESPONSE: CopilotResponse = {
   insights: [],
   suggestedActions: [],
   warnings: ["AI response validation failed."],
-  confidenceScore: 0.0,
+  confidenceScore: 0.0
 };
 
 // ---------------------------------------------------------------------------
@@ -55,7 +52,7 @@ const FALLBACK_RESPONSE: CopilotResponse = {
 // ---------------------------------------------------------------------------
 const RequestBodySchema = z.object({
   query: z.string().min(1),
-  context: z.record(z.string(), z.unknown()),
+  context: z.record(z.string(), z.unknown())
 });
 
 // ---------------------------------------------------------------------------
@@ -65,8 +62,10 @@ const RequestBodySchema = z.object({
 // ---------------------------------------------------------------------------
 let _openai: OpenAI | null = null;
 
-function getOpenAIClient(): OpenAI {
-  if (!_openai) {
+function getOpenAIClient(): OpenAI
+{
+  if(!_openai)
+  {
     _openai = new OpenAI();
   }
   return _openai;
@@ -81,19 +80,22 @@ function getOpenAIClient(): OpenAI {
  * Handles cases where the model wraps JSON in markdown fences or adds
  * trailing text after the closing brace.
  */
-function extractJson(raw: string): string {
+function extractJson(raw: string): string
+{
   let trimmed = raw.trim();
 
   // Strip markdown code fences (```json ... ``` or ``` ... ```)
   const fenceMatch = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/m.exec(trimmed);
-  if (fenceMatch?.[1]) {
+  if(fenceMatch?.[1])
+  {
     trimmed = fenceMatch[1].trim();
   }
 
   // Find the outermost { ... } block
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
+  if(firstBrace !== -1 && lastBrace > firstBrace)
+  {
     trimmed = trimmed.slice(firstBrace, lastBrace + 1);
   }
 
@@ -107,27 +109,36 @@ function extractJson(raw: string): string {
  *   2. Attempt to repair (extract JSON from surrounding text).
  *   3. If still invalid, return null so caller can use fallback.
  */
-function parseAndValidate(raw: string): CopilotResponse | null {
+function parseAndValidate(raw: string): CopilotResponse | null
+{
   // Attempt 1: direct parse
-  try {
+  try
+  {
     const parsed: unknown = JSON.parse(raw);
     const result = CopilotResponseSchema.safeParse(parsed);
-    if (result.success) {
+    if(result.success)
+    {
       return result.data;
     }
-  } catch {
+  }
+  catch
+  {
     // Not valid JSON — fall through to repair attempt
   }
 
   // Attempt 2: repair — extract JSON substring and re-parse
-  try {
+  try
+  {
     const repaired = extractJson(raw);
     const parsed: unknown = JSON.parse(repaired);
     const result = CopilotResponseSchema.safeParse(parsed);
-    if (result.success) {
+    if(result.success)
+    {
       return result.data;
     }
-  } catch {
+  }
+  catch
+  {
     // Repair also failed
   }
 
@@ -140,70 +151,89 @@ function parseAndValidate(raw: string): CopilotResponse | null {
  */
 function buildUserMessage(
   query: string,
-  context: Record<string, unknown>,
-): string {
+  context: Record<string, unknown>
+): string
+{
   return [
     "Dashboard context:",
     JSON.stringify(context, null, 2),
     "",
     "User query:",
-    query,
+    query
   ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
 // Route handler — POST /api/ai
 // ---------------------------------------------------------------------------
-export async function POST(request: Request): Promise<NextResponse> {
+export async function POST(request: Request): Promise<NextResponse>
+{
   // 1. Validate environment
   const model = process.env["LLM_MODEL"];
-  if (!process.env["OPENAI_API_KEY"]) {
+  if(!process.env["OPENAI_API_KEY"])
+  {
     console.error("[ai/route] OPENAI_API_KEY is not set");
-    return NextResponse.json(FALLBACK_RESPONSE, { status: 503 });
+    return NextResponse.json(FALLBACK_RESPONSE, {status: 503});
   }
-  if (!model) {
+  if(!model)
+  {
     console.error("[ai/route] LLM_MODEL is not set");
-    return NextResponse.json(FALLBACK_RESPONSE, { status: 503 });
+    return NextResponse.json(FALLBACK_RESPONSE, {status: 503});
   }
 
   // 2. Parse & validate request body
   let body: z.infer<typeof RequestBodySchema>;
-  try {
+  try
+  {
     const raw: unknown = await request.json();
     const parsed = RequestBodySchema.safeParse(raw);
-    if (!parsed.success) {
+    if(!parsed.success)
+    {
       return NextResponse.json(
-        { error: "Invalid request body", details: parsed.error.issues },
-        { status: 400 },
+        {
+          error: "Invalid request body",
+          details: parsed.error.issues
+        },
+        {status: 400}
       );
     }
     body = parsed.data;
-  } catch {
+  }
+  catch
+  {
     return NextResponse.json(
-      { error: "Request body must be valid JSON" },
-      { status: 400 },
+      {error: "Request body must be valid JSON"},
+      {status: 400}
     );
   }
 
   // 3. Call OpenAI Chat Completions
-  try {
+  try
+  {
     const client = getOpenAIClient();
     const completion = await client.chat.completions.create({
       model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
+      // temperature: 0.2,
+      response_format: {type: "json_object"},
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserMessage(body.query, body.context) },
-      ],
+        {
+          role: "system",
+          content: SYSTEM_PROMPT
+        },
+        {
+          role: "user",
+          content: buildUserMessage(body.query, body.context)
+        }
+      ]
     });
 
     // 4. Log token usage server-side (contract Section 10)
-    if (completion.usage) {
+    if(completion.usage)
+    {
       console.info("[ai/route] Token usage:", {
         prompt_tokens: completion.usage.prompt_tokens,
         completion_tokens: completion.usage.completion_tokens,
-        total_tokens: completion.usage.total_tokens,
+        total_tokens: completion.usage.total_tokens
       });
     }
 
@@ -211,7 +241,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     const choice = completion.choices[0];
     const rawContent = choice?.message?.content;
 
-    if (!rawContent) {
+    if(!rawContent)
+    {
       console.warn("[ai/route] Empty response from model");
       return NextResponse.json(FALLBACK_RESPONSE);
     }
@@ -219,31 +250,35 @@ export async function POST(request: Request): Promise<NextResponse> {
     // 6. Parse, validate (with repair attempt) per contract Section 9 & 13
     const validated = parseAndValidate(rawContent);
 
-    if (validated) {
+    if(validated)
+    {
       return NextResponse.json(validated);
     }
 
     // Validation failed after repair — return safe fallback
     console.warn(
       "[ai/route] Response failed schema validation after repair attempt:",
-      rawContent,
+      rawContent
     );
     return NextResponse.json(FALLBACK_RESPONSE);
-  } catch (error: unknown) {
+  }
+  catch(error: unknown)
+  {
     // 7. Handle OpenAI / network errors safely
-    if (error instanceof OpenAI.APIError) {
+    if(error instanceof OpenAI.APIError)
+    {
       console.error("[ai/route] OpenAI API error:", {
         status: error.status,
         message: error.message,
-        code: error.code,
+        code: error.code
       });
 
       const status = error.status === 429 ? 429 : 502;
-      return NextResponse.json(FALLBACK_RESPONSE, { status });
+      return NextResponse.json(FALLBACK_RESPONSE, {status});
     }
 
     // Unknown error — still return safe fallback, never crash
     console.error("[ai/route] Unexpected error:", error);
-    return NextResponse.json(FALLBACK_RESPONSE, { status: 500 });
+    return NextResponse.json(FALLBACK_RESPONSE, {status: 500});
   }
 }

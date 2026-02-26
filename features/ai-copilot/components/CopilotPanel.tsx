@@ -82,7 +82,7 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
   const clearSession = useCopilotStore((s) => s.clearSession);
   const lastResponse = useCopilotStore((s) => s.lastResponse);
 
-  // ---- Auto-scroll to bottom on new messages / loading state change -------
+  // ---- Auto-scroll to bottom on new messages / loading / response change ---
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,7 +90,7 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, lastResponse]);
 
   // ---- Handlers -----------------------------------------------------------
   const handleClearSession = useCallback(() => {
