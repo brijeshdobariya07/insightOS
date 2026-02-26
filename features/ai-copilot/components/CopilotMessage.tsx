@@ -1,7 +1,7 @@
 "use client";
 
-import {useTableData} from "@/features/data-table";
 import type {TableStatus} from "@/features/data-table";
+import {useDataTableStore} from "@/features/data-table/store";
 import type {CopilotResponse} from "@/lib/validators/copilot-schema";
 import {memo, useCallback} from "react";
 import {dispatchCopilotAction} from "../action-dispatcher";
@@ -77,6 +77,7 @@ function InsightCard({
   readonly severity: Severity;
 })
 {
+
   return (
     <li className="rounded-lg border border-gray-700/50 bg-gray-800/30 px-3 py-2.5">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -180,7 +181,7 @@ function StructuredResponseBody({
   readonly response: CopilotResponse;
 })
 {
-  const {setStatusFilter} = useTableData();
+  const setStatusFilter = useDataTableStore(state => state.setStatusFilter);
 
   /**
    * Wraps the narrowly-typed `setStatusFilter` (which accepts
