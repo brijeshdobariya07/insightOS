@@ -5,11 +5,19 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTableData } from "../hooks/useTableData";
 import { TableHeader } from "./TableHeader";
 import { TableRow } from "./TableRow";
+import type { TableStatus } from "../types";
 
 const ROW_HEIGHT_ESTIMATE = 48;
 const OVERSCAN_COUNT = 5;
 const CONTAINER_HEIGHT = 500;
 const SKELETON_ROW_COUNT = 12;
+
+const STATUS_OPTIONS: readonly { value: TableStatus | "all"; label: string }[] = [
+  { value: "all", label: "All Statuses" },
+  { value: "active", label: "Active" },
+  { value: "pending", label: "Pending" },
+  { value: "error", label: "Error" },
+] as const;
 
 function SkeletonRow() {
   return (
@@ -103,15 +111,36 @@ function EmptyState() {
   );
 }
 
-export function DataTable() {
-  const { data, isLoading, isError, error, refetch } = useTableData();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+function NoResultsState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <p className="text-sm text-gray-400">No rows match your filters</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Try adjusting your search or status filter
+      </p>
+    </div>
+  );
+}
 
-  const rows = data?.rows ?? [];
+export function DataTable() {
+  const {
+    data,
+    filteredRows,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    searchTerm,
+    setSearchTerm,
+    statusFilter,
+    setStatusFilter,
+  } = useTableData();
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- useVirtualizer intentionally returns mutable objects
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: filteredRows.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ROW_HEIGHT_ESTIMATE,
     overscan: OVERSCAN_COUNT,
@@ -121,8 +150,28 @@ export function DataTable() {
     void refetch();
   }, [refetch]);
 
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setSearchTerm(e.target.value);
+    },
+    [setSearchTerm],
+  );
+
+  const handleStatusChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setStatusFilter(e.target.value as TableStatus | "all");
+    },
+    [setStatusFilter],
+  );
+
   const errorMessage =
     error instanceof Error ? error.message : "An unexpected error occurred";
+
+  const hasData = !isLoading && !isError && data !== undefined;
+  const hasFilteredRows = hasData && filteredRows.length > 0;
+  const hasNoResults = hasData && filteredRows.length === 0;
+  const isFiltered = searchTerm.trim().length > 0 || statusFilter !== "all";
+  const hasOriginalData = (data?.rows.length ?? 0) > 0;
 
   return (
     <div
@@ -132,6 +181,68 @@ export function DataTable() {
       role="table"
       aria-label="Data table"
     >
+      {/* ── Toolbar: Search + Status Filter ── */}
+      <div
+        className={
+          "flex flex-col gap-3 border-b border-gray-800 bg-gray-900/80 " +
+          "px-4 py-3 sm:flex-row sm:items-center sm:gap-4"
+        }
+      >
+        {/* Search input */}
+        <div className="relative flex-1">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={
+              "pointer-events-none absolute left-3 top-1/2 h-4 w-4 " +
+              "-translate-y-1/2 text-gray-500"
+            }
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+            />
+          </svg>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            placeholder="Search by name or email…"
+            aria-label="Search table rows"
+            className={
+              "w-full rounded-md border border-gray-700 bg-gray-800/60 " +
+              "py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 " +
+              "transition-colors duration-150 " +
+              "focus:border-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-600"
+            }
+          />
+        </div>
+
+        {/* Status filter dropdown */}
+        <select
+          value={statusFilter}
+          onChange={handleStatusChange}
+          aria-label="Filter by status"
+          className={
+            "rounded-md border border-gray-700 bg-gray-800/60 " +
+            "px-3 py-2 text-sm text-gray-200 " +
+            "transition-colors duration-150 " +
+            "focus:border-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-600"
+          }
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <TableHeader />
 
       <div
@@ -145,15 +256,19 @@ export function DataTable() {
           <ErrorState message={errorMessage} onRetry={handleRetry} />
         )}
 
-        {!isLoading && !isError && rows.length === 0 && <EmptyState />}
+        {/* No original data at all */}
+        {hasNoResults && !isFiltered && <EmptyState />}
 
-        {!isLoading && !isError && rows.length > 0 && (
+        {/* Has original data but filters produced zero results */}
+        {hasNoResults && isFiltered && hasOriginalData && <NoResultsState />}
+
+        {hasFilteredRows && (
           <div
             style={{ height: virtualizer.getTotalSize() }}
             className="relative w-full"
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index];
+              const row = filteredRows[virtualRow.index];
 
               if (!row) {
                 return null;
@@ -177,10 +292,12 @@ export function DataTable() {
       </div>
 
       {/* Footer with row count */}
-      {!isLoading && !isError && rows.length > 0 && (
+      {hasData && (
         <div className="border-t border-gray-800 bg-gray-900/80 px-4 py-2.5">
           <p className="text-xs text-gray-500">
-            {data?.total.toLocaleString() ?? 0} rows
+            {isFiltered
+              ? `${filteredRows.length.toLocaleString()} of ${(data?.total ?? 0).toLocaleString()} rows`
+              : `${(data?.total ?? 0).toLocaleString()} rows`}
           </p>
         </div>
       )}
