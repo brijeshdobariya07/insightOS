@@ -80,6 +80,7 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
   const messages = useCopilotStore((s) => s.messages);
   const isLoading = useCopilotStore((s) => s.isLoading);
   const clearSession = useCopilotStore((s) => s.clearSession);
+  const lastResponse = useCopilotStore((s) => s.lastResponse);
 
   // ---- Auto-scroll to bottom on new messages / loading state change -------
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -98,6 +99,15 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
 
   // ---- Derived state ------------------------------------------------------
   const hasMessages = messages.length > 0;
+
+  // Find the index of the last assistant message so we can attach the
+  // structured response to it (the store only tracks the most recent one).
+  const lastAssistantIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === "assistant") return i;
+    }
+    return -1;
+  })();
 
   return (
     <aside
@@ -198,8 +208,14 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
           role="list"
           aria-label="Copilot conversation"
         >
-          {messages.map((msg) => (
-            <CopilotMessage key={msg.id} message={msg} />
+          {messages.map((msg, index) => (
+            <CopilotMessage
+              key={msg.id}
+              message={msg}
+              structuredResponse={
+                index === lastAssistantIndex ? lastResponse : null
+              }
+            />
           ))}
 
           {isLoading && <LoadingIndicator />}

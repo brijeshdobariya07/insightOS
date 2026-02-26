@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import type { CopilotMessage as CopilotMessageType } from "../store";
+import type { CopilotResponse } from "@/lib/validators/copilot-schema";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -9,6 +10,189 @@ import type { CopilotMessage as CopilotMessageType } from "../store";
 
 interface CopilotMessageProps {
   readonly message: CopilotMessageType;
+  /** Structured AI response — passed only to the most recent assistant message. */
+  readonly structuredResponse?: CopilotResponse | null;
+}
+
+// ---------------------------------------------------------------------------
+// Severity helpers
+// ---------------------------------------------------------------------------
+
+type Severity = "low" | "medium" | "high";
+
+const SEVERITY_STYLES: Record<Severity, string> = {
+  low: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+  medium: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+  high: "border-red-500/20 bg-red-500/10 text-red-400",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Sub-components (private — not exported)
+// ---------------------------------------------------------------------------
+
+/** Pill-shaped severity indicator. */
+function SeverityBadge({ severity }: { readonly severity: Severity }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${SEVERITY_STYLES[severity]}`}
+    >
+      {severity}
+    </span>
+  );
+}
+
+/** A single insight row with title, description, and severity badge. */
+function InsightCard({
+  title,
+  description,
+  severity,
+}: {
+  readonly title: string;
+  readonly description: string;
+  readonly severity: Severity;
+}) {
+  return (
+    <li className="rounded-lg border border-gray-700/50 bg-gray-800/30 px-3 py-2.5">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-gray-100">{title}</span>
+        <SeverityBadge severity={severity} />
+      </div>
+      <p className="text-xs leading-relaxed text-gray-400">{description}</p>
+    </li>
+  );
+}
+
+/** Ghost-style button for a suggested action (non-functional placeholder). */
+function ActionButton({ label }: { readonly label: string }) {
+  return (
+    <button
+      type="button"
+      disabled
+      aria-label={label}
+      title="Action execution coming soon"
+      className="cursor-default rounded-md border border-indigo-500/25 bg-indigo-500/5 px-2.5 py-1.5 text-[11px] font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Amber-styled warnings list. */
+function WarningsList({ warnings }: { readonly warnings: readonly string[] }) {
+  if (warnings.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+        Warnings
+      </p>
+      <ul className="space-y-1">
+        {warnings.map((warning) => (
+          <li key={warning} className="text-xs leading-relaxed text-amber-300/80">
+            &bull; {warning}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Small confidence score pill. */
+function ConfidenceBadge({ score }: { readonly score: number }) {
+  const percentage = Math.round(score * 100);
+  const colorClass =
+    score >= 0.8
+      ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5"
+      : score >= 0.5
+        ? "text-amber-400 border-amber-500/20 bg-amber-500/5"
+        : "text-red-400 border-red-500/20 bg-red-500/5";
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${colorClass}`}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className="size-2.5"
+        aria-hidden="true"
+      >
+        <circle cx="8" cy="8" r="8" />
+      </svg>
+      {String(percentage)}% confidence
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Structured assistant response body
+// ---------------------------------------------------------------------------
+
+/** Full structured rendering of a validated AI copilot response. */
+function StructuredResponseBody({
+  response,
+}: {
+  readonly response: CopilotResponse;
+}) {
+  const hasInsights = response.insights.length > 0;
+  const hasActions = response.suggestedActions.length > 0;
+  const hasWarnings = response.warnings.length > 0;
+
+  return (
+    <div className="mt-1.5 space-y-3">
+      {/* ---- Summary ---------------------------------------------------- */}
+      <div>
+        <h4 className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+          Summary
+        </h4>
+        <p className="text-sm font-medium leading-relaxed text-gray-100">
+          {response.summary}
+        </p>
+      </div>
+
+      {/* ---- Insights --------------------------------------------------- */}
+      {hasInsights && (
+        <div>
+          <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            Insights
+          </h4>
+          <ul className="space-y-2">
+            {response.insights.map((insight) => (
+              <InsightCard
+                key={`${insight.title}-${insight.severity}`}
+                title={insight.title}
+                description={insight.description}
+                severity={insight.severity}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ---- Suggested actions ------------------------------------------ */}
+      {hasActions && (
+        <div>
+          <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            Suggested Actions
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {response.suggestedActions.map((action) => (
+              <ActionButton key={action.label} label={action.label} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---- Warnings --------------------------------------------------- */}
+      {hasWarnings && <WarningsList warnings={response.warnings} />}
+
+      {/* ---- Confidence score ------------------------------------------- */}
+      <div className="flex justify-end pt-0.5">
+        <ConfidenceBadge score={response.confidenceScore} />
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -20,11 +204,18 @@ interface CopilotMessageProps {
  *
  * - **User** messages are right-aligned with an indigo tint.
  * - **Assistant** messages are left-aligned with a neutral gray tint.
+ * - When `structuredResponse` is provided on an assistant message the
+ *   component renders the full structured layout (summary, insights,
+ *   suggested actions, warnings, confidence score) instead of plain text.
  */
 const CopilotMessage = memo<CopilotMessageProps>(function CopilotMessage({
   message,
+  structuredResponse,
 }) {
   const isUser = message.role === "user";
+  const isAssistant = message.role === "assistant";
+  const showStructured =
+    isAssistant && structuredResponse != null;
 
   return (
     <div
@@ -47,8 +238,12 @@ const CopilotMessage = memo<CopilotMessageProps>(function CopilotMessage({
           {isUser ? "You" : "Copilot"}
         </span>
 
-        {/* Message body — whitespace-pre-wrap preserves newlines from the LLM */}
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {/* Message body — structured or plain text */}
+        {showStructured ? (
+          <StructuredResponseBody response={structuredResponse} />
+        ) : (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
       </div>
     </div>
   );
