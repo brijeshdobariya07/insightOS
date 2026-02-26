@@ -1,11 +1,13 @@
 // ---------------------------------------------------------------------------
 // Action Dispatcher — executes copilot-suggested actions against the host UI
-// controls.  Pure logic module — no UI imports, no side-effects beyond the
-// control callbacks it receives.
+// controls.  Pure logic module — no React imports, no side-effects beyond the
+// control callbacks it receives and the metrics Zustand store.
 //
 // Action types are the closed enum defined in ai-behavior-contract.md §5:
 //   APPLY_FILTER · EXPORT_REPORT · HIGHLIGHT_METRIC
 // ---------------------------------------------------------------------------
+
+import { useMetricsStore } from "@/features/metrics/store";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,9 +97,9 @@ function handleHighlightMetric(
   payload: Record<string, unknown>,
   metricControls: MetricControls,
 ): DispatchResult {
-  const metricKey = extractString(payload, "metricKey");
+  const raw = extractString(payload, "metricKey");
 
-  if (metricKey === undefined) {
+  if (raw === undefined) {
     return {
       success: false,
       actionType: "HIGHLIGHT_METRIC",
@@ -106,15 +108,24 @@ function handleHighlightMetric(
     };
   }
 
-  if (metricControls.highlightMetric === undefined) {
+  const metricKey = raw.trim();
+
+  if (metricKey.length === 0) {
     return {
       success: false,
       actionType: "HIGHLIGHT_METRIC",
-      error: "highlightMetric control is not available in the current context.",
+      error:
+        'HIGHLIGHT_METRIC "metricKey" must be a non-empty string.',
     };
   }
 
-  metricControls.highlightMetric(metricKey);
+  // Prefer the injected callback when provided; fall back to the Zustand store
+  // so highlighting works even when the host page does not wire a callback.
+  const highlight =
+    metricControls.highlightMetric ??
+    useMetricsStore.getState().setHighlightedMetric;
+
+  highlight(metricKey);
 
   return { success: true, actionType: "HIGHLIGHT_METRIC" };
 }

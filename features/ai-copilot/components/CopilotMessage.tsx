@@ -2,6 +2,7 @@
 
 import type {TableStatus} from "@/features/data-table";
 import {useDataTableStore} from "@/features/data-table/store";
+import {useMetricsStore} from "@/features/metrics";
 import type {CopilotResponse} from "@/lib/validators/copilot-schema";
 import {memo, useCallback} from "react";
 import {dispatchCopilotAction} from "../action-dispatcher";
@@ -182,6 +183,7 @@ function StructuredResponseBody({
 })
 {
   const setStatusFilter = useDataTableStore(state => state.setStatusFilter);
+  const setHighlightedMetric = useMetricsStore(state => state.setHighlightedMetric);
 
   /**
    * Wraps the narrowly-typed `setStatusFilter` (which accepts
@@ -209,10 +211,10 @@ function StructuredResponseBody({
           payload: action.payload
         },
         tableControls: {setStatusFilter: safeSetStatusFilter},
-        metricControls: {}
+        metricControls: {highlightMetric: setHighlightedMetric}
       });
     },
-    [safeSetStatusFilter]
+    [safeSetStatusFilter, setHighlightedMetric]
   );
 
   const hasInsights = response.insights.length > 0;
