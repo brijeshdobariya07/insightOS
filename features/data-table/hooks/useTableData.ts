@@ -1,9 +1,14 @@
-import { useState, useMemo, useCallback } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useShallow } from "zustand/react/shallow";
 import { fetchTableData } from "../services";
+import { useDataTableStore } from "../store";
+import type { SortDirection } from "../store";
 import type { TableResponse, TableRowItem, TableStatus } from "../types";
 
-type SortDirection = "asc" | "desc";
+// ---------------------------------------------------------------------------
+// Pure helpers (unchanged — no state dependency)
+// ---------------------------------------------------------------------------
 
 /**
  * Compares two TableRowItem values for a given key.
@@ -54,6 +59,10 @@ function matchesStatus(
   return filter === "all" || row.status === filter;
 }
 
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
 export function useTableData() {
   // ── TanStack Query (unchanged queryKey — no refetch on local state changes) ──
   const { data, isLoading, isError, error, refetch } =
@@ -62,28 +71,21 @@ export function useTableData() {
       queryFn: fetchTableData,
     });
 
-  // ── Sorting state ──
-  const [sortKey, setSortKey] = useState<keyof TableRowItem | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  // ── Store state (shallow selector prevents re-renders on unrelated changes) ──
+  const { statusFilter, searchTerm, sortKey, sortDirection } =
+    useDataTableStore(
+      useShallow((state) => ({
+        statusFilter: state.statusFilter,
+        searchTerm: state.searchTerm,
+        sortKey: state.sortKey,
+        sortDirection: state.sortDirection,
+      })),
+    );
 
-  // ── Filtering state ──
-  const [statusFilter, setStatusFilter] = useState<TableStatus | "all">("all");
-
-  // ── Search state ──
-  const [searchTerm, setSearchTerm] = useState<string>("");
-
-  // ── Toggle sort: same key flips direction, new key resets to "asc" ──
-  const toggleSort = useCallback(
-    (key: keyof TableRowItem) => {
-      if (sortKey === key) {
-        setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-      } else {
-        setSortKey(key);
-        setSortDirection("asc");
-      }
-    },
-    [sortKey],
-  );
+  // ── Store actions (stable references — never cause re-renders) ──
+  const setStatusFilter = useDataTableStore((state) => state.setStatusFilter);
+  const setSearchTerm = useDataTableStore((state) => state.setSearchTerm);
+  const toggleSort = useDataTableStore((state) => state.toggleSort);
 
   // ── Derived rows: search → status filter → sort (never mutates original) ──
   const filteredRows = useMemo<TableRowItem[]>(() => {

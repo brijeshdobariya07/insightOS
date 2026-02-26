@@ -1,17 +1,18 @@
 "use client";
 
-import { memo, useCallback } from "react";
-import type { CopilotMessage as CopilotMessageType } from "../store";
-import type { CopilotResponse } from "@/lib/validators/copilot-schema";
-import { dispatchCopilotAction } from "../action-dispatcher";
-import { useTableData } from "@/features/data-table";
-import type { TableStatus } from "@/features/data-table";
+import {useTableData} from "@/features/data-table";
+import type {TableStatus} from "@/features/data-table";
+import type {CopilotResponse} from "@/lib/validators/copilot-schema";
+import {memo, useCallback} from "react";
+import {dispatchCopilotAction} from "../action-dispatcher";
+import type {CopilotMessage as CopilotMessageType} from "../store";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-interface CopilotMessageProps {
+interface CopilotMessageProps
+{
   readonly message: CopilotMessageType;
   /** Structured AI response — passed only to the most recent assistant message. */
   readonly structuredResponse?: CopilotResponse | null;
@@ -26,13 +27,14 @@ const VALID_STATUS_FILTERS: ReadonlySet<string> = new Set<string>([
   "all",
   "active",
   "pending",
-  "error",
+  "error"
 ]);
 
 /** Type-guard: returns `true` when `value` is a valid status filter. */
 function isValidStatusFilter(
-  value: string,
-): value is TableStatus | "all" {
+  value: string
+): value is TableStatus | "all"
+{
   return VALID_STATUS_FILTERS.has(value);
 }
 
@@ -45,7 +47,7 @@ type Severity = "low" | "medium" | "high";
 const SEVERITY_STYLES: Record<Severity, string> = {
   low: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
   medium: "border-amber-500/20 bg-amber-500/10 text-amber-400",
-  high: "border-red-500/20 bg-red-500/10 text-red-400",
+  high: "border-red-500/20 bg-red-500/10 text-red-400"
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -53,7 +55,8 @@ const SEVERITY_STYLES: Record<Severity, string> = {
 // ---------------------------------------------------------------------------
 
 /** Pill-shaped severity indicator. */
-function SeverityBadge({ severity }: { readonly severity: Severity }) {
+function SeverityBadge({severity}: {readonly severity: Severity})
+{
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${SEVERITY_STYLES[severity]}`}
@@ -67,12 +70,13 @@ function SeverityBadge({ severity }: { readonly severity: Severity }) {
 function InsightCard({
   title,
   description,
-  severity,
+  severity
 }: {
   readonly title: string;
   readonly description: string;
   readonly severity: Severity;
-}) {
+})
+{
   return (
     <li className="rounded-lg border border-gray-700/50 bg-gray-800/30 px-3 py-2.5">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -87,11 +91,12 @@ function InsightCard({
 /** Interactive button for a suggested copilot action. */
 function ActionButton({
   label,
-  onExecute,
+  onExecute
 }: {
   readonly label: string;
   readonly onExecute: () => void;
-}) {
+})
+{
   return (
     <button
       type="button"
@@ -105,8 +110,12 @@ function ActionButton({
 }
 
 /** Amber-styled warnings list. */
-function WarningsList({ warnings }: { readonly warnings: readonly string[] }) {
-  if (warnings.length === 0) return null;
+function WarningsList({warnings}: {readonly warnings: readonly string[]})
+{
+  if(warnings.length === 0)
+  {
+    return null;
+  }
 
   return (
     <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
@@ -115,7 +124,10 @@ function WarningsList({ warnings }: { readonly warnings: readonly string[] }) {
       </p>
       <ul className="space-y-1">
         {warnings.map((warning) => (
-          <li key={warning} className="text-xs leading-relaxed text-amber-300/80">
+          <li
+            key={warning}
+            className="text-xs leading-relaxed text-amber-300/80"
+          >
             &bull; {warning}
           </li>
         ))}
@@ -125,7 +137,8 @@ function WarningsList({ warnings }: { readonly warnings: readonly string[] }) {
 }
 
 /** Small confidence score pill. */
-function ConfidenceBadge({ score }: { readonly score: number }) {
+function ConfidenceBadge({score}: {readonly score: number})
+{
   const percentage = Math.round(score * 100);
   const colorClass =
     score >= 0.8
@@ -145,7 +158,11 @@ function ConfidenceBadge({ score }: { readonly score: number }) {
         className="size-2.5"
         aria-hidden="true"
       >
-        <circle cx="8" cy="8" r="8" />
+        <circle
+          cx="8"
+          cy="8"
+          r="8"
+        />
       </svg>
       {String(percentage)}% confidence
     </span>
@@ -158,11 +175,12 @@ function ConfidenceBadge({ score }: { readonly score: number }) {
 
 /** Full structured rendering of a validated AI copilot response. */
 function StructuredResponseBody({
-  response,
+  response
 }: {
   readonly response: CopilotResponse;
-}) {
-  const { setStatusFilter } = useTableData();
+})
+{
+  const {setStatusFilter} = useTableData();
 
   /**
    * Wraps the narrowly-typed `setStatusFilter` (which accepts
@@ -171,26 +189,29 @@ function StructuredResponseBody({
    * ignored — the LLM may produce arbitrary strings.
    */
   const safeSetStatusFilter = useCallback(
-    (value: string): void => {
-      if (isValidStatusFilter(value)) {
+    (value: string): void =>
+    {
+      if(isValidStatusFilter(value))
+      {
         setStatusFilter(value);
       }
     },
-    [setStatusFilter],
+    [setStatusFilter]
   );
 
   const handleActionClick = useCallback(
-    (action: CopilotResponse["suggestedActions"][number]) => {
+    (action: CopilotResponse["suggestedActions"][number]) =>
+    {
       dispatchCopilotAction({
         action: {
           actionType: action.actionType,
-          payload: action.payload,
+          payload: action.payload
         },
-        tableControls: { setStatusFilter: safeSetStatusFilter },
-        metricControls: {},
+        tableControls: {setStatusFilter: safeSetStatusFilter},
+        metricControls: {}
       });
     },
-    [safeSetStatusFilter],
+    [safeSetStatusFilter]
   );
 
   const hasInsights = response.insights.length > 0;
@@ -272,8 +293,9 @@ function StructuredResponseBody({
  */
 const CopilotMessage = memo<CopilotMessageProps>(function CopilotMessage({
   message,
-  structuredResponse,
-}) {
+  structuredResponse
+})
+{
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const showStructured =
@@ -311,5 +333,5 @@ const CopilotMessage = memo<CopilotMessageProps>(function CopilotMessage({
   );
 });
 
-export { CopilotMessage };
-export type { CopilotMessageProps };
+export {CopilotMessage};
+export type {CopilotMessageProps};
