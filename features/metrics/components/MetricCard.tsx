@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import type { MetricItem, MetricTrend } from "../types";
+import { useMetricsStore } from "../store";
 
 interface TrendConfig {
   readonly color: string;
@@ -57,14 +58,17 @@ interface MetricCardProps {
 const MetricCard = memo<MetricCardProps>(function MetricCard({ metric }) {
   const { label, value, changePercentage, trend } = metric;
   const trendConfig = TREND_CONFIG[trend];
+  const highlightedMetric = useMetricsStore((s) => s.highlightedMetric);
+  const isHighlighted = metric.id === highlightedMetric;
 
   return (
     <div
-      className={
-        "group rounded-lg border border-gray-800 bg-gray-900/60 p-5 " +
-        "transition-all duration-200 " +
-        "hover:border-gray-700 hover:bg-gray-900/80 hover:shadow-lg hover:shadow-black/20"
-      }
+      className={[
+        "group rounded-lg border p-5 transition-all duration-200",
+        isHighlighted
+          ? "scale-[1.02] border-blue-500/50 bg-gray-900/80 shadow-lg shadow-blue-500/20 ring-1 ring-blue-500/30"
+          : "border-gray-800 bg-gray-900/60 hover:border-gray-700 hover:bg-gray-900/80 hover:shadow-lg hover:shadow-black/20",
+      ].join(" ")}
     >
       <p className="text-sm font-medium text-gray-400">{label}</p>
 
