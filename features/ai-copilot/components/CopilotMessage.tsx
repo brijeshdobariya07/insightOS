@@ -1,8 +1,11 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import type { CopilotMessage as CopilotMessageType } from "../store";
 import type { CopilotResponse } from "@/lib/validators/copilot-schema";
+import { dispatchCopilotAction } from "../action-dispatcher";
+import { useTableData } from "@/features/data-table";
+import type { TableStatus } from "@/features/data-table";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -12,6 +15,25 @@ interface CopilotMessageProps {
   readonly message: CopilotMessageType;
   /** Structured AI response — passed only to the most recent assistant message. */
   readonly structuredResponse?: CopilotResponse | null;
+}
+
+// ---------------------------------------------------------------------------
+// Filter-value validator
+// ---------------------------------------------------------------------------
+
+/** The complete set of values accepted by `setStatusFilter`. */
+const VALID_STATUS_FILTERS: ReadonlySet<string> = new Set<string>([
+  "all",
+  "active",
+  "pending",
+  "error",
+]);
+
+/** Type-guard: returns `true` when `value` is a valid status filter. */
+function isValidStatusFilter(
+  value: string,
+): value is TableStatus | "all" {
+  return VALID_STATUS_FILTERS.has(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,15 +84,20 @@ function InsightCard({
   );
 }
 
-/** Ghost-style button for a suggested action (non-functional placeholder). */
-function ActionButton({ label }: { readonly label: string }) {
+/** Interactive button for a suggested copilot action. */
+function ActionButton({
+  label,
+  onExecute,
+}: {
+  readonly label: string;
+  readonly onExecute: () => void;
+}) {
   return (
     <button
       type="button"
-      disabled
       aria-label={label}
-      title="Action execution coming soon"
-      className="cursor-default rounded-md border border-indigo-500/25 bg-indigo-500/5 px-2.5 py-1.5 text-[11px] font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10"
+      onClick={onExecute}
+      className="cursor-pointer rounded-md border border-indigo-500/25 bg-indigo-500/5 px-2.5 py-1.5 text-[11px] font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10"
     >
       {label}
     </button>
@@ -135,6 +162,37 @@ function StructuredResponseBody({
 }: {
   readonly response: CopilotResponse;
 }) {
+  const { setStatusFilter } = useTableData();
+
+  /**
+   * Wraps the narrowly-typed `setStatusFilter` (which accepts
+   * `TableStatus | "all"`) so it satisfies the dispatcher's generic
+   * `(value: string) => void` contract.  Invalid values are silently
+   * ignored — the LLM may produce arbitrary strings.
+   */
+  const safeSetStatusFilter = useCallback(
+    (value: string): void => {
+      if (isValidStatusFilter(value)) {
+        setStatusFilter(value);
+      }
+    },
+    [setStatusFilter],
+  );
+
+  const handleActionClick = useCallback(
+    (action: CopilotResponse["suggestedActions"][number]) => {
+      dispatchCopilotAction({
+        action: {
+          actionType: action.actionType,
+          payload: action.payload,
+        },
+        tableControls: { setStatusFilter: safeSetStatusFilter },
+        metricControls: {},
+      });
+    },
+    [safeSetStatusFilter],
+  );
+
   const hasInsights = response.insights.length > 0;
   const hasActions = response.suggestedActions.length > 0;
   const hasWarnings = response.warnings.length > 0;
@@ -178,7 +236,11 @@ function StructuredResponseBody({
           </h4>
           <div className="flex flex-wrap gap-1.5">
             {response.suggestedActions.map((action) => (
-              <ActionButton key={action.label} label={action.label} />
+              <ActionButton
+                key={action.label}
+                label={action.label}
+                onExecute={() => handleActionClick(action)}
+              />
             ))}
           </div>
         </div>
