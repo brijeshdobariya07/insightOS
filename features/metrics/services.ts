@@ -1,4 +1,9 @@
-import type { MetricItem, MetricTrend, MetricsResponse } from "./types";
+import type {
+  MetricItem,
+  MetricTrend,
+  MetricsResponse,
+  TimeSeriesDataPoint,
+} from "./types";
 
 interface MetricDefinition {
   id: string;
@@ -47,6 +52,67 @@ function generateMetricItem(definition: MetricDefinition): MetricItem {
   };
 }
 
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+const TIMESERIES_CONFIG = {
+  revenueBase: 42000,
+  revenueVariance: 8000,
+  usersBase: 1800,
+  usersVariance: 400,
+  weekendRevenueDip: 0.72,
+  weekendUsersDip: 0.65,
+  midweekRevenuePeak: 1.15,
+  midweekUsersPeak: 1.1,
+} as const;
+
+function getDayMultiplier(
+  dayIndex: number,
+  peakFactor: number,
+  dipFactor: number,
+): number {
+  if (dayIndex === 5 || dayIndex === 6) return dipFactor;
+  if (dayIndex === 2 || dayIndex === 3) return peakFactor;
+  return 1;
+}
+
+function generateTimeSeries(): TimeSeriesDataPoint[] {
+  return DAY_LABELS.map((name, index) => {
+    const revenueMultiplier = getDayMultiplier(
+      index,
+      TIMESERIES_CONFIG.midweekRevenuePeak,
+      TIMESERIES_CONFIG.weekendRevenueDip,
+    );
+    const usersMultiplier = getDayMultiplier(
+      index,
+      TIMESERIES_CONFIG.midweekUsersPeak,
+      TIMESERIES_CONFIG.weekendUsersDip,
+    );
+
+    const revenue = roundTo(
+      Math.max(
+        0,
+        randomInRange(
+          TIMESERIES_CONFIG.revenueBase * revenueMultiplier,
+          TIMESERIES_CONFIG.revenueVariance,
+        ),
+      ),
+      2,
+    );
+    const users = roundTo(
+      Math.max(
+        0,
+        randomInRange(
+          TIMESERIES_CONFIG.usersBase * usersMultiplier,
+          TIMESERIES_CONFIG.usersVariance,
+        ),
+      ),
+      0,
+    );
+
+    return { name, revenue, users };
+  });
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -57,9 +123,11 @@ export async function fetchMetrics(): Promise<MetricsResponse> {
   await delay(800);
 
   const metrics = METRIC_DEFINITIONS.map(generateMetricItem);
+  const timeSeries = generateTimeSeries();
 
   return {
     metrics,
+    timeSeries,
     generatedAt: new Date().toISOString(),
   };
 }

@@ -15,7 +15,14 @@ export interface MetricItem {
   trend: MetricTrend;
 }
 
+export interface TimeSeriesDataPoint {
+  name: string;
+  revenue: number;
+  users: number;
+}
+
 export interface MetricsResponse {
   metrics: MetricItem[];
+  timeSeries: TimeSeriesDataPoint[];
   generatedAt: string;
 }
