@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import type { CopilotResponse } from "@/lib/validators/copilot-schema";
 import { buildCopilotContext, type CopilotContextParams } from "../context-builder";
-import { sendCopilotQuery } from "../services/copilot-api";
 import { useCopilotStore } from "../store";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +21,95 @@ interface CopilotInputProps {
 /** Generate a reasonably unique id without pulling in a library. */
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// ---------------------------------------------------------------------------
+// NDJSON streaming infrastructure
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated union for newline-delimited JSON events received from POST /api/ai.
+ * Must stay in sync with the route's `StreamEvent` type.
+ *
+ * - `token` — incremental content delta from the model.
+ * - `done`  — final validated (or fallback) CopilotResponse.
+ */
+type StreamEvent =
+  | { readonly type: "token"; readonly content: string }
+  | { readonly type: "done"; readonly payload: CopilotResponse };
+
+/**
+ * Imperatively update a single message's content in the Zustand store.
+ * Uses `setState` directly so no store-level action is needed.
+ */
+function updateMessageContent(id: string, content: string): void {
+  useCopilotStore.setState((state) => ({
+    messages: state.messages.map((msg) =>
+      msg.id === id ? { ...msg, content } : msg,
+    ),
+  }));
+}
+
+/**
+ * Try to parse a single NDJSON line into a typed StreamEvent.
+ * Returns `null` for blank lines or malformed payloads.
+ */
+function tryParseStreamEvent(line: string): StreamEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as StreamEvent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read an NDJSON ReadableStream to completion, updating the assistant message
+ * as tokens arrive and dispatching the validated response when done.
+ *
+ * Extracted as a standalone async function to keep the submit handler flat.
+ */
+async function consumeStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  messageId: string,
+  onValidatedResponse: (response: CopilotResponse) => void,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let accumulated = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // NDJSON: each event is a single JSON object terminated by `\n`
+    const lines = buffer.split("\n");
+    // The last segment is either incomplete or empty — retain as buffer
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const event = tryParseStreamEvent(line);
+      if (!event) continue;
+
+      switch (event.type) {
+        case "token":
+          accumulated += event.content;
+          updateMessageContent(messageId, accumulated);
+          break;
+
+        case "done":
+          // Replace raw streamed text with the clean summary;
+          // the full structured response is dispatched for rendering.
+          updateMessageContent(messageId, event.payload.summary);
+          onValidatedResponse(event.payload);
+          break;
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -45,26 +134,38 @@ export function CopilotInput({ context }: CopilotInputProps) {
   const setLastResponse = useCopilotStore((s) => s.setLastResponse);
 
   /**
-   * Send the user query to the copilot backend and push the assistant
-   * response into the store.  Loading state is managed here so the UI
-   * reflects in-flight status.
+   * Stream the copilot response from the backend, updating the assistant
+   * message progressively as tokens arrive.  Once the stream completes the
+   * validated (or fallback) CopilotResponse is dispatched to the store for
+   * structured rendering.
    */
   const submitQuery = useCallback(
     async (query: string): Promise<void> => {
       setLoading(true);
 
-      try {
-        const builtContext = buildCopilotContext(context);
-        const response = await sendCopilotQuery(query, { ...builtContext });
+      // 1. Add a placeholder assistant message that will be updated in-place.
+      const messageId = uid();
+      addMessage({ id: messageId, role: "assistant", content: "" });
 
-        addMessage({ id: uid(), role: "assistant", content: response.summary });
-        setLastResponse(response);
-      } catch {
-        addMessage({
-          id: uid(),
-          role: "assistant",
-          content: "Something went wrong.",
+      try {
+        // 2. Build context and fetch the streaming endpoint.
+        const builtContext = buildCopilotContext(context);
+        const response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, context: { ...builtContext } }),
         });
+
+        if (!response.ok || !response.body) {
+          updateMessageContent(messageId, "Something went wrong.");
+          return;
+        }
+
+        // 3. Consume the NDJSON stream, updating the message as tokens arrive.
+        const reader = response.body.getReader();
+        await consumeStream(reader, messageId, setLastResponse);
+      } catch {
+        updateMessageContent(messageId, "Something went wrong.");
       } finally {
         setLoading(false);
       }

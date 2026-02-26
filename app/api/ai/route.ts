@@ -1,5 +1,6 @@
 import {type CopilotResponse, CopilotResponseSchema} from "@/lib/validators/copilot-schema";
 import {NextResponse} from "next/server";
+import type {ChatCompletionChunk} from "openai/resources/chat/completions";
 import OpenAI from "openai";
 import {z} from "zod";
 
@@ -164,9 +165,33 @@ function buildUserMessage(
 }
 
 // ---------------------------------------------------------------------------
+// Streaming — JSON-line event types and encoder
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated union for newline-delimited JSON events streamed to the client.
+ *
+ * - `token` — incremental content delta from the model.
+ * - `done`  — final CopilotResponse after the stream completes.
+ *             Contains either the Zod-validated response or FALLBACK_RESPONSE
+ *             when validation fails (contract Section 9).
+ */
+type StreamEvent =
+  | { readonly type: "token"; readonly content: string }
+  | { readonly type: "done"; readonly payload: CopilotResponse };
+
+const encoder = new TextEncoder();
+
+/** Encode a StreamEvent as a UTF-8 JSON line (NDJSON). */
+function encodeLine(event: StreamEvent): Uint8Array
+{
+  return encoder.encode(JSON.stringify(event) + "\n");
+}
+
+// ---------------------------------------------------------------------------
 // Route handler — POST /api/ai
 // ---------------------------------------------------------------------------
-export async function POST(request: Request): Promise<NextResponse>
+export async function POST(request: Request): Promise<Response>
 {
   // 1. Validate environment
   const model = process.env["LLM_MODEL"];
@@ -207,14 +232,19 @@ export async function POST(request: Request): Promise<NextResponse>
     );
   }
 
-  // 3. Call OpenAI Chat Completions
+  // 3. Open streaming connection to OpenAI Chat Completions
   try
   {
     const client = getOpenAIClient();
-    const completion = await client.chat.completions.create({
+
+    // We must capture the stream reference outside the ReadableStream closure
+    // so we can detect OpenAI API errors (auth, rate-limit) eagerly before
+    // committing to the streaming Response.
+    const openaiStream = await client.chat.completions.create({
       model,
-      // temperature: 0.2,
       response_format: {type: "json_object"},
+      stream: true,
+      stream_options: {include_usage: true},
       messages: [
         {
           role: "system",
@@ -227,44 +257,95 @@ export async function POST(request: Request): Promise<NextResponse>
       ]
     });
 
-    // 4. Log token usage server-side (contract Section 10)
-    if(completion.usage)
-    {
-      console.info("[ai/route] Token usage:", {
-        prompt_tokens: completion.usage.prompt_tokens,
-        completion_tokens: completion.usage.completion_tokens,
-        total_tokens: completion.usage.total_tokens
-      });
-    }
+    // 4. Build ReadableStream that proxies OpenAI chunks as JSON-line events
+    const readable = new ReadableStream<Uint8Array>({
+      async start(controller: ReadableStreamDefaultController<Uint8Array>)
+      {
+        let fullContent = "";
 
-    // 5. Extract raw content
-    const choice = completion.choices[0];
-    const rawContent = choice?.message?.content;
+        try
+        {
+          for await(const chunk of openaiStream as AsyncIterable<ChatCompletionChunk>)
+          {
+            // 4a. Log token usage when available (final chunk, contract Section 10)
+            if(chunk.usage)
+            {
+              console.info("[ai/route] Token usage:", {
+                prompt_tokens: chunk.usage.prompt_tokens,
+                completion_tokens: chunk.usage.completion_tokens,
+                total_tokens: chunk.usage.total_tokens
+              });
+            }
 
-    if(!rawContent)
-    {
-      console.warn("[ai/route] Empty response from model");
-      return NextResponse.json(FALLBACK_RESPONSE);
-    }
+            // 4b. Extract delta content and stream to client
+            const delta: string | null | undefined = chunk.choices[0]?.delta?.content;
+            if(delta)
+            {
+              fullContent += delta;
+              controller.enqueue(encodeLine({type: "token", content: delta}));
+            }
+          }
 
-    // 6. Parse, validate (with repair attempt) per contract Section 9 & 13
-    const validated = parseAndValidate(rawContent);
+          // 5. Stream complete — validate full content per contract Section 9 & 13
+          if(!fullContent)
+          {
+            console.warn("[ai/route] Empty response from model");
+            controller.enqueue(encodeLine({type: "done", payload: FALLBACK_RESPONSE}));
+            controller.close();
+            return;
+          }
 
-    if(validated)
-    {
-      return NextResponse.json(validated);
-    }
+          const validated = parseAndValidate(fullContent);
 
-    // Validation failed after repair — return safe fallback
-    console.warn(
-      "[ai/route] Response failed schema validation after repair attempt:",
-      rawContent
-    );
-    return NextResponse.json(FALLBACK_RESPONSE);
+          if(validated)
+          {
+            controller.enqueue(encodeLine({type: "done", payload: validated}));
+          }
+          else
+          {
+            // Validation failed after repair — send safe fallback
+            console.warn(
+              "[ai/route] Response failed schema validation after repair attempt:",
+              fullContent
+            );
+            controller.enqueue(encodeLine({type: "done", payload: FALLBACK_RESPONSE}));
+          }
+        }
+        catch(streamError: unknown)
+        {
+          // Handle errors during stream iteration
+          if(streamError instanceof OpenAI.APIError)
+          {
+            console.error("[ai/route] OpenAI API error during stream:", {
+              status: streamError.status,
+              message: streamError.message,
+              code: streamError.code
+            });
+          }
+          else
+          {
+            console.error("[ai/route] Unexpected error during stream:", streamError);
+          }
+
+          // Always send fallback so the client has a safe response to render
+          controller.enqueue(encodeLine({type: "done", payload: FALLBACK_RESPONSE}));
+        }
+
+        controller.close();
+      }
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+      }
+    });
   }
   catch(error: unknown)
   {
-    // 7. Handle OpenAI / network errors safely
+    // 6. Handle errors that occur before the stream starts (auth, network, etc.)
     if(error instanceof OpenAI.APIError)
     {
       console.error("[ai/route] OpenAI API error:", {
