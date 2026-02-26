@@ -1,9 +1,18 @@
 "use client";
 
 import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { buildCopilotContext } from "../context-builder";
+import { buildCopilotContext, type CopilotContextParams } from "../context-builder";
 import { sendCopilotQuery } from "../services/copilot-api";
 import { useCopilotStore } from "../store";
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+interface CopilotInputProps {
+  /** Dashboard context injected by the parent panel. */
+  readonly context: CopilotContextParams;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,7 +36,7 @@ function uid(): string {
  * 3. Builds dashboard context and calls the copilot API.
  * 4. Pushes the assistant response (or an error message) into the store.
  */
-export function CopilotInput() {
+export function CopilotInput({ context }: CopilotInputProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const addMessage = useCopilotStore((s) => s.addMessage);
@@ -45,8 +54,8 @@ export function CopilotInput() {
       setLoading(true);
 
       try {
-        const context = buildCopilotContext({ currentPage: "dashboard" });
-        const response = await sendCopilotQuery(query, { ...context });
+        const builtContext = buildCopilotContext(context);
+        const response = await sendCopilotQuery(query, { ...builtContext });
 
         addMessage({ id: uid(), role: "assistant", content: response.summary });
         setLastResponse(response);
@@ -60,7 +69,7 @@ export function CopilotInput() {
         setLoading(false);
       }
     },
-    [addMessage, setLoading, setLastResponse],
+    [addMessage, setLoading, setLastResponse, context],
   );
 
   const handleSubmit = useCallback(

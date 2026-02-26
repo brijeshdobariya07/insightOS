@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useMetricsData } from "@/features/metrics";
+import { useTableData } from "@/features/data-table";
 import { useCopilotStore } from "../store";
+import type { CopilotContextParams } from "../context-builder";
 import { CopilotMessage } from "./CopilotMessage";
 import { CopilotInput } from "./CopilotInput";
 
@@ -81,6 +84,35 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
   const isLoading = useCopilotStore((s) => s.isLoading);
   const clearSession = useCopilotStore((s) => s.clearSession);
   const lastResponse = useCopilotStore((s) => s.lastResponse);
+
+  // ---- Dashboard context for the AI Copilot --------------------------------
+  const { data: metricsData } = useMetricsData();
+  const { filteredRows } = useTableData();
+
+  const dashboardContext = useMemo<CopilotContextParams>(() => {
+    const metrics = metricsData?.metrics;
+
+    const metricsSummary: Record<string, unknown> | undefined = metrics
+      ? Object.fromEntries(
+          metrics.map((m) => [m.label, m.value] as const),
+        )
+      : undefined;
+
+    const TABLE_SNAPSHOT_LIMIT = 10;
+
+    const tableSnapshot: Record<string, unknown>[] | undefined =
+      filteredRows.length > 0
+        ? filteredRows
+            .slice(0, TABLE_SNAPSHOT_LIMIT)
+            .map<Record<string, unknown>>((row) => ({ ...row }))
+        : undefined;
+
+    return {
+      currentPage: "dashboard",
+      metricsSummary,
+      tableSnapshot,
+    };
+  }, [metricsData?.metrics, filteredRows]);
 
   // ---- Auto-scroll to bottom on new messages / loading / response change ---
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -227,7 +259,7 @@ export function CopilotPanel({ isOpen, onClose }: CopilotPanelProps) {
       {/* ------------------------------------------------------------------ */}
       {/* Input                                                               */}
       {/* ------------------------------------------------------------------ */}
-      <CopilotInput />
+      <CopilotInput context={dashboardContext} />
     </aside>
   );
 }
