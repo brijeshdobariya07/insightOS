@@ -2,6 +2,7 @@
 
 import { useMetricsData } from "../hooks/useMetricsData";
 import { MetricCard } from "./MetricCard";
+import { MetricsChart } from "./MetricsChart";
 
 const SKELETON_COUNT = 4;
 const SKELETON_INDICES = Array.from({ length: SKELETON_COUNT }, (_, i) => i);
@@ -23,16 +24,31 @@ function MetricCardSkeleton() {
   );
 }
 
+function MetricsChartSkeleton() {
+  return (
+    <div
+      className={
+        "animate-pulse rounded-lg border border-gray-800 bg-gray-900/60 p-5"
+      }
+    >
+      <div className="h-[320px] w-full rounded bg-gray-800/40" />
+    </div>
+  );
+}
+
 function MetricsLoadingSkeleton() {
   return (
-    <section
-      aria-label="Loading metrics"
-      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4"
-    >
-      {SKELETON_INDICES.map((index) => (
-        <MetricCardSkeleton key={index} />
-      ))}
-    </section>
+    <div className="space-y-6">
+      <section
+        aria-label="Loading metrics"
+        className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4"
+      >
+        {SKELETON_INDICES.map((index) => (
+          <MetricCardSkeleton key={index} />
+        ))}
+      </section>
+      <MetricsChartSkeleton />
+    </div>
   );
 }
 
@@ -113,6 +129,7 @@ export function MetricsOverview() {
   }
 
   const metrics = data?.metrics;
+  const timeSeries = data?.timeSeries ?? [];
 
   if (!metrics || metrics.length === 0) {
     return (
@@ -129,10 +146,13 @@ export function MetricsOverview() {
   }
 
   return (
-    <MetricsGrid>
-      {metrics.map((metric) => (
-        <MetricCard key={metric.id} metric={metric} />
-      ))}
-    </MetricsGrid>
+    <div className="space-y-6">
+      <MetricsGrid>
+        {metrics.map((metric) => (
+          <MetricCard key={metric.id} metric={metric} />
+        ))}
+      </MetricsGrid>
+      <MetricsChart data={timeSeries} />
+    </div>
   );
 }
