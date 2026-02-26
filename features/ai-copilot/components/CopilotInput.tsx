@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { buildCopilotContext } from "../context-builder";
+import { sendCopilotQuery } from "../services/copilot-api";
 import { useCopilotStore } from "../store";
 
 // ---------------------------------------------------------------------------
@@ -22,15 +24,44 @@ function uid(): string {
  * On submit the component:
  * 1. Pushes a `user` message into the Zustand store.
  * 2. Clears the local input field.
- *
- * It does **not** trigger an API call — that responsibility belongs to a
- * higher-level hook that subscribes to store changes.
+ * 3. Builds dashboard context and calls the copilot API.
+ * 4. Pushes the assistant response (or an error message) into the store.
  */
 export function CopilotInput() {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const addMessage = useCopilotStore((s) => s.addMessage);
   const isLoading = useCopilotStore((s) => s.isLoading);
+  const setLoading = useCopilotStore((s) => s.setLoading);
+  const setLastResponse = useCopilotStore((s) => s.setLastResponse);
+
+  /**
+   * Send the user query to the copilot backend and push the assistant
+   * response into the store.  Loading state is managed here so the UI
+   * reflects in-flight status.
+   */
+  const submitQuery = useCallback(
+    async (query: string): Promise<void> => {
+      setLoading(true);
+
+      try {
+        const context = buildCopilotContext({ currentPage: "dashboard" });
+        const response = await sendCopilotQuery(query, { ...context });
+
+        addMessage({ id: uid(), role: "assistant", content: response.summary });
+        setLastResponse(response);
+      } catch {
+        addMessage({
+          id: uid(),
+          role: "assistant",
+          content: "Something went wrong.",
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [addMessage, setLoading, setLastResponse],
+  );
 
   const handleSubmit = useCallback(
     (e?: FormEvent) => {
@@ -46,8 +77,10 @@ export function CopilotInput() {
       requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
+
+      void submitQuery(trimmed);
     },
-    [value, isLoading, addMessage],
+    [value, isLoading, addMessage, submitQuery],
   );
 
   /** Submit on Enter (without Shift). Shift+Enter inserts a newline. */
