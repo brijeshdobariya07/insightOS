@@ -1,6 +1,26 @@
-import { memo } from "react";
+"use client";
 
-const COLUMNS = [
+import { memo, useCallback } from "react";
+import type { TableRowItem } from "../types";
+
+type SortDirection = "asc" | "desc";
+
+/** Column keys that support sorting. */
+type SortableKey = "user" | "revenue" | "createdAt";
+
+const SORTABLE_KEYS: ReadonlySet<string> = new Set<SortableKey>([
+  "user",
+  "revenue",
+  "createdAt",
+]);
+
+interface ColumnDef {
+  readonly key: keyof TableRowItem;
+  readonly label: string;
+  readonly width: string;
+}
+
+const COLUMNS: readonly ColumnDef[] = [
   { key: "user", label: "User", width: "w-[20%]" },
   { key: "email", label: "Email", width: "w-[25%]" },
   { key: "revenue", label: "Revenue", width: "w-[15%]" },
@@ -8,7 +28,47 @@ const COLUMNS = [
   { key: "createdAt", label: "Created At", width: "w-[25%]" },
 ] as const;
 
-const TableHeader = memo(function TableHeader() {
+// ── Sort indicator ──
+
+function SortIndicator({
+  direction,
+}: {
+  readonly direction: SortDirection;
+}) {
+  return (
+    <span className="ml-1 text-gray-300" aria-hidden="true">
+      {direction === "asc" ? "▲" : "▼"}
+    </span>
+  );
+}
+
+// ── Props ──
+
+interface TableHeaderProps {
+  /** Currently sorted column key — `null` when unsorted. */
+  readonly sortKey?: keyof TableRowItem | null;
+  /** Current sort direction. */
+  readonly sortDirection?: SortDirection;
+  /** Callback from useTableData to toggle sorting on a column. */
+  readonly onToggleSort?: (key: keyof TableRowItem) => void;
+}
+
+// ── Component ──
+
+const TableHeader = memo<TableHeaderProps>(function TableHeader({
+  sortKey = null,
+  sortDirection = "asc",
+  onToggleSort,
+}) {
+  const handleClick = useCallback(
+    (key: keyof TableRowItem) => {
+      if (onToggleSort && SORTABLE_KEYS.has(key)) {
+        onToggleSort(key);
+      }
+    },
+    [onToggleSort],
+  );
+
   return (
     <div
       className={
@@ -18,17 +78,51 @@ const TableHeader = memo(function TableHeader() {
       }
       role="row"
     >
-      {COLUMNS.map((column) => (
-        <div
-          key={column.key}
-          className={`${column.width} shrink-0 px-2`}
-          role="columnheader"
-        >
-          {column.label}
-        </div>
-      ))}
+      {COLUMNS.map((column) => {
+        const isSortable = SORTABLE_KEYS.has(column.key);
+        const isActive = sortKey === column.key;
+
+        if (isSortable) {
+          return (
+            <button
+              key={column.key}
+              type="button"
+              onClick={() => handleClick(column.key)}
+              className={
+                `${column.width} shrink-0 px-2 text-left ` +
+                "inline-flex items-center gap-0.5 " +
+                "transition-colors duration-150 " +
+                "hover:text-gray-200 focus:outline-none focus:text-gray-200 " +
+                (isActive ? "text-gray-200" : "")
+              }
+              role="columnheader"
+              aria-sort={
+                isActive
+                  ? sortDirection === "asc"
+                    ? "ascending"
+                    : "descending"
+                  : "none"
+              }
+            >
+              {column.label}
+              {isActive && <SortIndicator direction={sortDirection} />}
+            </button>
+          );
+        }
+
+        return (
+          <div
+            key={column.key}
+            className={`${column.width} shrink-0 px-2`}
+            role="columnheader"
+          >
+            {column.label}
+          </div>
+        );
+      })}
     </div>
   );
 });
 
 export { TableHeader, COLUMNS };
+export type { TableHeaderProps, SortableKey };
